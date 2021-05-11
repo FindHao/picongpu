@@ -21,18 +21,19 @@
 
 #pragma once
 
-#include "picongpu/fields/Fields.def"
 #include "picongpu/simulation_defines.hpp"
+
+#include "picongpu/fields/Fields.def"
 #include "picongpu/particles/Particles.hpp"
 
-#include <pmacc/types.hpp>
-#include <pmacc/fields/SimulationFieldHelper.hpp>
 #include <pmacc/dataManagement/ISimulationData.hpp>
-#include <pmacc/memory/buffers/GridBuffer.hpp>
+#include <pmacc/fields/SimulationFieldHelper.hpp>
 #include <pmacc/mappings/simulation/GridController.hpp>
+#include <pmacc/math/Vector.hpp>
 #include <pmacc/memory/boxes/DataBox.hpp>
 #include <pmacc/memory/boxes/PitchedBox.hpp>
-#include <pmacc/math/Vector.hpp>
+#include <pmacc/memory/buffers/GridBuffer.hpp>
+#include <pmacc/types.hpp>
 
 #include <cstdint>
 #include <memory>
@@ -154,12 +155,12 @@ namespace picongpu
         /** Smooth current density and add it to the electric field
          *
          * @tparam T_area area to operate on
-         * @tparam T_CurrentInterpolation current interpolation type
+         * @tparam T_CurrentInterpolationFunctor current interpolation functor type
          *
-         * @param myCurrentInterpolation current interpolation
+         * @param myCurrentInterpolationFunctor current interpolation functor
          */
-        template<uint32_t T_area, class T_CurrentInterpolation>
-        HINLINE void addCurrentToEMF(T_CurrentInterpolation& myCurrentInterpolation);
+        template<uint32_t T_area, class T_CurrentInterpolationFunctor>
+        HINLINE void addCurrentToEMF(T_CurrentInterpolationFunctor myCurrentInterpolationFunctor);
 
         /** Bash field in a direction.
          *

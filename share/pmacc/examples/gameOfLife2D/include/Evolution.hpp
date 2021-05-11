@@ -21,18 +21,20 @@
 #pragma once
 
 #include "types.hpp"
-#include <pmacc/math/Vector.hpp>
-#include <pmacc/mappings/threads/ThreadCollective.hpp>
-#include <pmacc/nvidia/functors/Assign.hpp>
-#include <pmacc/memory/boxes/CachedBox.hpp>
-#include <pmacc/memory/dataTypes/Mask.hpp>
+
 #include <pmacc/dimensions/DataSpaceOperations.hpp>
-#include <pmacc/random/distributions/distributions.hpp>
-#include <pmacc/random/methods/methods.hpp>
-#include <pmacc/random/Random.hpp>
-#include <pmacc/traits/GetNumWorkers.hpp>
+#include <pmacc/mappings/kernel/AreaMapping.hpp>
 #include <pmacc/mappings/threads/ForEachIdx.hpp>
 #include <pmacc/mappings/threads/IdxConfig.hpp>
+#include <pmacc/mappings/threads/ThreadCollective.hpp>
+#include <pmacc/math/Vector.hpp>
+#include <pmacc/math/operation.hpp>
+#include <pmacc/memory/boxes/CachedBox.hpp>
+#include <pmacc/memory/dataTypes/Mask.hpp>
+#include <pmacc/random/Random.hpp>
+#include <pmacc/random/distributions/distributions.hpp>
+#include <pmacc/random/methods/methods.hpp>
+#include <pmacc/traits/GetNumWorkers.hpp>
 
 #include <memory>
 
@@ -88,7 +90,7 @@ namespace gol
 
                 ThreadCollective<BlockArea, numWorkers> collective(workerIdx);
 
-                nvidia::functors::Assign assign;
+                math::operation::Assign assign;
                 collective(acc, assign, cache, buffRead_shifted);
 
                 cupla::__syncthreads(acc);

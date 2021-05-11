@@ -20,6 +20,7 @@
 #pragma once
 
 #include "picongpu/simulation_defines.hpp"
+
 #include "picongpu/fields/MaxwellSolver/ArbitraryOrderFDTD/ArbitraryOrderFDTD.hpp"
 #include "picongpu/fields/MaxwellSolver/ArbitraryOrderFDTDPML/ArbitraryOrderFDTDPML.def"
 
@@ -30,9 +31,8 @@ namespace pmacc
 {
     namespace traits
     {
-        template<uint32_t T_neighbors, typename T_CurrentInterpolation>
-        struct StringProperties<
-            ::picongpu::fields::maxwellSolver::ArbitraryOrderFDTDPML<T_neighbors, T_CurrentInterpolation>>
+        template<uint32_t T_neighbors>
+        struct StringProperties<::picongpu::fields::maxwellSolver::ArbitraryOrderFDTDPML<T_neighbors>>
         {
             static StringProperty get()
             {

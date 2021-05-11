@@ -20,9 +20,10 @@
 #pragma once
 
 #include "picongpu/simulation_defines.hpp"
+
 #include "picongpu/fields/MaxwellSolver/ArbitraryOrderFDTD/ArbitraryOrderFDTD.def"
-#include "picongpu/fields/differentiation/Curl.hpp"
 #include "picongpu/fields/MaxwellSolver/ArbitraryOrderFDTD/Derivative.hpp"
+#include "picongpu/fields/differentiation/Curl.hpp"
 
 #include <cstdint>
 #include <string>
@@ -32,9 +33,8 @@ namespace pmacc
 {
     namespace traits
     {
-        template<uint32_t T_neighbors, typename T_CurrentInterpolation>
-        struct StringProperties<
-            ::picongpu::fields::maxwellSolver::ArbitraryOrderFDTD<T_neighbors, T_CurrentInterpolation>>
+        template<uint32_t T_neighbors>
+        struct StringProperties<::picongpu::fields::maxwellSolver::ArbitraryOrderFDTD<T_neighbors>>
         {
             static StringProperty get()
             {

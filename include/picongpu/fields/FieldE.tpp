@@ -20,20 +20,19 @@
 
 #pragma once
 
-#include "picongpu/fields/FieldE.hpp"
 #include "picongpu/fields/EMFieldBase.hpp"
+#include "picongpu/fields/FieldE.hpp"
 #include "picongpu/simulation_types.hpp"
 #include "picongpu/traits/SIBaseUnits.hpp"
 
 #include <string>
-#include <vector>
 #include <type_traits>
+#include <vector>
 
 
 namespace picongpu
 {
-    FieldE::FieldE(MappingDesc const& cellDescription)
-        : fields::EMFieldBase(cellDescription, getName(), std::integral_constant<CommunicationTag, FIELD_E>{})
+    FieldE::FieldE(MappingDesc const& cellDescription) : fields::EMFieldBase<FieldE>(cellDescription, getName())
     {
     }
 

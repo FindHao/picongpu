@@ -23,10 +23,12 @@
 #pragma once
 
 #include "pmacc/types.hpp"
-#include <sstream>
-#include <string>
-#include <stdexcept>
+
 #include <boost/numeric/conversion/bounds.hpp>
+
+#include <sstream>
+#include <stdexcept>
+#include <string>
 
 namespace pmacc
 {
@@ -72,7 +74,9 @@ namespace pmacc
 
         /** Get next available type id
          *
-         * Warning: is not thread-safe.
+         * \warning is not thread-safe.
+         * \warning when using it to generate matching tags from multiple MPI ranks, ensure the same call order.
+         *          For type-unique ids, GetUniqueTypeId<> is preferable as it is not dependent on the call order
          */
         uint64_t getNextId()
         {

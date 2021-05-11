@@ -21,10 +21,11 @@
 #pragma once
 
 #include "picongpu/simulation_defines.hpp"
-#include "picongpu/fields/absorber/Absorber.hpp"
+
 #include "picongpu/fields/MaxwellSolver/YeePML/Field.hpp"
 #include "picongpu/fields/MaxwellSolver/YeePML/Parameters.hpp"
 #include "picongpu/fields/MaxwellSolver/YeePML/YeePML.kernel"
+#include "picongpu/fields/absorber/Absorber.hpp"
 #include "picongpu/fields/cellType/Yee.hpp"
 #include "picongpu/traits/GetMargin.hpp"
 
@@ -240,9 +241,10 @@ namespace picongpu
                         Thickness getGlobalThickness() const
                         {
                             Thickness globalThickness;
+                            auto& absorber = absorber::Absorber::get();
                             for(uint32_t axis = 0u; axis < simDim; axis++)
                                 for(auto direction = 0; direction < 2; direction++)
-                                    globalThickness(axis, direction) = absorber::getGlobalThickness()(axis, direction);
+                                    globalThickness(axis, direction) = absorber.getGlobalThickness()(axis, direction);
                             return globalThickness;
                         }
 
@@ -373,17 +375,15 @@ namespace picongpu
              * updates and communication. The numerical schemes to perform the updates
              * are implemented by yeePML::detail::Solver.
              *
-             * @tparam T_CurrentInterpolation current interpolation functor
              * @tparam T_CurlE functor to compute curl of E
              * @tparam T_CurlB functor to compute curl of B
              */
-            template<typename T_CurrentInterpolation, typename T_CurlE, typename T_CurlB>
+            template<typename T_CurlE, typename T_CurlB>
             class YeePML
             {
             public:
                 // Types required by field solver interface
                 using CellType = cellType::Yee;
-                using CurrentInterpolation = T_CurrentInterpolation;
                 using CurlE = T_CurlE;
                 using CurlB = T_CurlB;
 
@@ -463,6 +463,25 @@ namespace picongpu
 
         } // namespace maxwellSolver
     } // namespace fields
+
+    namespace traits
+    {
+        /** Get margin for given field access in the YeePML solver
+         *
+         * It is always the same as the regular Yee solver with the given curl operators.
+         *
+         * @tparam T_CurlE functor to compute curl of E
+         * @tparam T_CurlB functor to compute curl of B
+         * @tparam T_Field field type
+         */
+        template<typename T_CurlE, typename T_CurlB, typename T_Field>
+        struct GetMargin<fields::maxwellSolver::YeePML<T_CurlE, T_CurlB>, T_Field>
+            : public GetMargin<fields::maxwellSolver::Yee<T_CurlE, T_CurlB>, T_Field>
+        {
+        };
+
+    } // namespace traits
+
 } // namespace picongpu
 
 #include "picongpu/fields/MaxwellSolver/YeePML/Field.tpp"

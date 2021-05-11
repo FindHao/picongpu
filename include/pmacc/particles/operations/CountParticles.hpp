@@ -21,18 +21,17 @@
 
 #pragma once
 
-#include "pmacc/types.hpp"
-#include "pmacc/memory/buffers/GridBuffer.hpp"
+#include "pmacc/kernel/atomic.hpp"
 #include "pmacc/mappings/kernel/AreaMapping.hpp"
-#include "pmacc/particles/memory/dataTypes/FramePointer.hpp"
-
-#include "pmacc/particles/particleFilter/FilterFactory.hpp"
-#include "pmacc/particles/particleFilter/PositionFilter.hpp"
-#include "pmacc/nvidia/atomic.hpp"
-#include "pmacc/memory/shared/Allocate.hpp"
-#include "pmacc/traits/GetNumWorkers.hpp"
 #include "pmacc/mappings/threads/ForEachIdx.hpp"
 #include "pmacc/mappings/threads/IdxConfig.hpp"
+#include "pmacc/memory/buffers/GridBuffer.hpp"
+#include "pmacc/memory/shared/Allocate.hpp"
+#include "pmacc/particles/memory/dataTypes/FramePointer.hpp"
+#include "pmacc/particles/particleFilter/FilterFactory.hpp"
+#include "pmacc/particles/particleFilter/PositionFilter.hpp"
+#include "pmacc/traits/GetNumWorkers.hpp"
+#include "pmacc/types.hpp"
 
 
 namespace pmacc
@@ -118,7 +117,7 @@ namespace pmacc
                         {
                             auto parSrc = (frame[linearIdx]);
                             if(accParFilter(acc, parSrc))
-                                nvidia::atomicAllInc(acc, &counter, ::alpaka::hierarchy::Threads{});
+                                kernel::atomicAllInc(acc, &counter, ::alpaka::hierarchy::Threads{});
                         }
                     }
                 });

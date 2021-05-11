@@ -20,14 +20,15 @@
 #pragma once
 
 #include "picongpu/simulation_defines.hpp"
+
 #include "picongpu/simulation/control/MovingWindow.hpp"
 
 #include <pmacc/dimensions/DataSpace.hpp>
-#include <pmacc/mappings/simulation/SubGrid.hpp>
 #include <pmacc/mappings/kernel/MappingDescription.hpp>
-#include <pmacc/traits/GetNumWorkers.hpp>
+#include <pmacc/mappings/simulation/SubGrid.hpp>
 #include <pmacc/mappings/threads/ForEachIdx.hpp>
 #include <pmacc/mappings/threads/IdxConfig.hpp>
+#include <pmacc/traits/GetNumWorkers.hpp>
 
 
 namespace picongpu
@@ -121,19 +122,12 @@ namespace picongpu
              *
              * @tparam ValFunctor A Value-Producing functor for a given cell
              *                    in time and space
-             * @tparam OpFunctor A manipulating functor like pmacc::nvidia::functors::add
+             * @tparam OpFunctor A manipulating functor like pmacc::math::operation::*
              */
             template<typename T_Field, typename T_OpFunctor, typename T_ValFunctor>
-            void operator()(
-                T_Field field,
-                T_OpFunctor opFunctor,
-                T_ValFunctor valFunctor,
-                uint32_t const currentStep,
-                const bool enabled = true) const
+            void operator()(T_Field field, T_OpFunctor opFunctor, T_ValFunctor valFunctor, uint32_t const currentStep)
+                const
             {
-                if(!enabled)
-                    return;
-
                 SubGrid<simDim> const& subGrid = Environment<simDim>::get().SubGrid();
                 // offset to the local domain relative to the origin of the global domain
                 DataSpace<simDim> totalDomainOffset(subGrid.getLocalDomain().offset);

@@ -21,32 +21,10 @@
 
 #pragma once
 
-#include <pmacc/verify.hpp>
-#include <pmacc/assert.hpp>
-
-#include <algorithm>
-#include <array>
-#include <string>
-#include <vector>
-#include <boost/lexical_cast.hpp>
-#include <boost/mpl/count.hpp>
-
-#include <pmacc/types.hpp>
-#include <pmacc/simulationControl/SimulationHelper.hpp>
 #include "picongpu/simulation_defines.hpp"
-#include "picongpu/versionFormat.hpp"
-#include "picongpu/random/seed/ISeed.hpp"
 
-#include <pmacc/eventSystem/EventSystem.hpp>
-#include <pmacc/dimensions/GridLayout.hpp>
-#include <pmacc/nvidia/memory/MemoryInfo.hpp>
-#include <pmacc/mappings/kernel/MappingDescription.hpp>
-#include "picongpu/simulation/control/MovingWindow.hpp"
-#include <pmacc/mappings/simulation/SubGrid.hpp>
-#include <pmacc/mappings/simulation/GridController.hpp>
-
-#include "picongpu/fields/FieldE.hpp"
 #include "picongpu/fields/FieldB.hpp"
+#include "picongpu/fields/FieldE.hpp"
 #include "picongpu/fields/FieldJ.hpp"
 #include "picongpu/fields/FieldTmp.hpp"
 #include "picongpu/fields/MaxwellSolver/Solvers.hpp"
@@ -55,50 +33,71 @@
 #include "picongpu/initialization/IInitPlugin.hpp"
 #include "picongpu/initialization/ParserGridDistribution.hpp"
 #include "picongpu/particles/Manipulate.hpp"
-#include "picongpu/particles/manipulators/manipulators.hpp"
+#include "picongpu/particles/debyeLength/Check.hpp"
 #include "picongpu/particles/filter/filter.hpp"
 #include "picongpu/particles/flylite/NonLTE.tpp"
+#include "picongpu/particles/manipulators/manipulators.hpp"
+#include "picongpu/random/seed/ISeed.hpp"
 #include "picongpu/simulation/control/DomainAdjuster.hpp"
+#include "picongpu/simulation/control/MovingWindow.hpp"
 #include "picongpu/simulation/stage/Bremsstrahlung.hpp"
+#include "picongpu/simulation/stage/Collision.hpp"
 #include "picongpu/simulation/stage/CurrentBackground.hpp"
 #include "picongpu/simulation/stage/CurrentDeposition.hpp"
 #include "picongpu/simulation/stage/CurrentInterpolationAndAdditionToEMF.hpp"
 #include "picongpu/simulation/stage/CurrentReset.hpp"
 #include "picongpu/simulation/stage/FieldBackground.hpp"
+#include "picongpu/simulation/stage/IterationStart.hpp"
 #include "picongpu/simulation/stage/MomentumBackup.hpp"
 #include "picongpu/simulation/stage/ParticleIonization.hpp"
 #include "picongpu/simulation/stage/ParticlePush.hpp"
 #include "picongpu/simulation/stage/PopulationKinetics.hpp"
 #include "picongpu/simulation/stage/SynchrotronRadiation.hpp"
-#include <pmacc/random/methods/methods.hpp>
+#include "picongpu/versionFormat.hpp"
+
+#include <pmacc/assert.hpp>
+#include <pmacc/dimensions/GridLayout.hpp>
+#include <pmacc/eventSystem/EventSystem.hpp>
+#include <pmacc/functor/Call.hpp>
+#include <pmacc/mappings/kernel/MappingDescription.hpp>
+#include <pmacc/mappings/simulation/GridController.hpp>
+#include <pmacc/mappings/simulation/SubGrid.hpp>
 #include <pmacc/random/RNGProvider.hpp>
+#include <pmacc/random/methods/methods.hpp>
+#include <pmacc/simulationControl/SimulationHelper.hpp>
+#include <pmacc/types.hpp>
+#include <pmacc/verify.hpp>
+
+#include <boost/lexical_cast.hpp>
+#include <boost/mpl/count.hpp>
+
+#include <algorithm>
+#include <array>
+#include <string>
+#include <vector>
 
 #if(PMACC_CUDA_ENABLED == 1)
-#    include "picongpu/particles/bremsstrahlung/ScaledSpectrum.hpp"
 #    include "picongpu/particles/bremsstrahlung/PhotonEmissionAngle.hpp"
+#    include "picongpu/particles/bremsstrahlung/ScaledSpectrum.hpp"
 #endif
 
+#include "picongpu/particles/InitFunctors.hpp"
+#include "picongpu/particles/ParticlesFunctors.hpp"
 #include "picongpu/particles/synchrotronPhotons/SynchrotronFunctions.hpp"
 
-#include <pmacc/nvidia/reduce/Reduce.hpp>
 #include <pmacc/memory/boxes/DataBoxDim1Access.hpp>
-#include <pmacc/nvidia/functors/Add.hpp>
-#include <pmacc/nvidia/functors/Sub.hpp>
-
+#include <pmacc/meta/ForEach.hpp>
 #include <pmacc/meta/conversion/SeqToMap.hpp>
 #include <pmacc/meta/conversion/TypeToPointerPair.hpp>
-
-#include <pmacc/meta/ForEach.hpp>
-#include "picongpu/particles/ParticlesFunctors.hpp"
-#include "picongpu/particles/InitFunctors.hpp"
+#include <pmacc/particles/IdProvider.hpp>
 #include <pmacc/particles/memory/buffers/MallocMCBuffer.hpp>
 #include <pmacc/particles/traits/FilterByFlag.hpp>
 #include <pmacc/particles/traits/FilterByIdentifier.hpp>
-#include <pmacc/particles/IdProvider.hpp>
 
 #include <boost/mpl/int.hpp>
-#include <memory>
+
 #include <functional>
+#include <memory>
 
 
 namespace picongpu
@@ -133,6 +132,8 @@ namespace picongpu
         virtual void pluginRegisterHelp(po::options_description& desc)
         {
             SimulationHelper<simDim>::pluginRegisterHelp(desc);
+            currentInterpolationAndAdditionToEMF.registerHelp(desc);
+            fieldBackground.registerHelp(desc);
             desc.add_options()(
                 "versionOnce",
                 po::value<bool>(&showVersionOnce)->zero_tokens(),
@@ -319,13 +320,18 @@ namespace picongpu
 
         virtual void init()
         {
-            namespace nvmem = pmacc::nvidia::memory;
+            // This has to be called before initFields()
+            currentInterpolationAndAdditionToEMF.init();
 
             DataConnector& dc = Environment<>::get().DataConnector();
             initFields(dc);
 
             // create field solver
             this->myFieldSolver = new fields::Solver(*cellDescription);
+
+            // initialize field background stage,
+            // this may include allocation of additional fields so has to be done before particles
+            fieldBackground.init(*cellDescription);
 
             // Initialize random number generator and synchrotron functions, if there are synchrotron or bremsstrahlung
             // Photons
@@ -485,34 +491,13 @@ namespace picongpu
 
                     initialiserController->restart((uint32_t) this->restartStep, this->restartDirectory);
                     step = this->restartStep;
-
-                    /** restore background fields in GUARD
-                     *
-                     * loads the outer GUARDS of the global domain for absorbing/open boundary condtions
-                     *
-                     * @todo as soon as we add GUARD fields to the checkpoint data, e.g. for PML boundary
-                     *       conditions, this section needs to be removed
-                     */
-                    cellwiseOperation::CellwiseOperation<GUARD> guardBGField(*cellDescription);
-                    namespace nvfct = pmacc::nvidia::functors;
-                    guardBGField(
-                        fieldE,
-                        nvfct::Add(),
-                        FieldBackgroundE(fieldE->getUnit()),
-                        step,
-                        FieldBackgroundE::InfluenceParticlePusher);
-                    guardBGField(
-                        fieldB,
-                        nvfct::Add(),
-                        FieldBackgroundB(fieldB->getUnit()),
-                        step,
-                        FieldBackgroundB::InfluenceParticlePusher);
                 }
                 else
                 {
                     initialiserController->init();
-                    meta::ForEach<particles::InitPipeline, particles::CallFunctor<bmpl::_1>> initSpecies;
+                    meta::ForEach<particles::InitPipeline, pmacc::functor::Call<bmpl::_1>> initSpecies;
                     initSpecies(step);
+                    particles::debyeLength::check(*cellDescription);
                 }
             }
 
@@ -526,9 +511,6 @@ namespace picongpu
             EventTask eRfieldB = fieldB->asyncCommunication(__getTransactionEvent());
             __setTransactionEvent(eRfieldB);
 
-            dc.releaseData(FieldE::getName());
-            dc.releaseData(FieldB::getName());
-
             return step;
         }
 
@@ -540,8 +522,11 @@ namespace picongpu
         virtual void runOneStep(uint32_t currentStep)
         {
             using namespace simulation::stage;
+
+            IterationStart{}(currentStep);
             MomentumBackup{}(currentStep);
             CurrentReset{}(currentStep);
+            Collision{deviceHeap}(currentStep);
             ParticleIonization{*cellDescription}(currentStep);
             PopulationKinetics{}(currentStep);
             SynchrotronRadiation{*cellDescription, synchrotronFunctions}(currentStep);
@@ -550,12 +535,12 @@ namespace picongpu
 #endif
             EventTask commEvent;
             ParticlePush{}(currentStep, commEvent);
-            FieldBackground{*cellDescription}(currentStep, nvidia::functors::Sub());
+            fieldBackground.subtract(currentStep);
             myFieldSolver->update_beforeCurrent(currentStep);
             __setTransactionEvent(commEvent);
             CurrentBackground{*cellDescription}(currentStep);
             CurrentDeposition{}(currentStep);
-            CurrentInterpolationAndAdditionToEMF{}(currentStep);
+            currentInterpolationAndAdditionToEMF(currentStep);
             myFieldSolver->update_afterCurrent(currentStep);
         }
 
@@ -578,13 +563,13 @@ namespace picongpu
 
             if(addBgFields)
             {
-                /** add background field: the movingWindowCheck is just at the start
+                /* add background field: the movingWindowCheck is just at the start
                  * of a time step before all the plugins are called (and the step
                  * itself is performed for this time step).
                  * Hence the background field is visible for all plugins
                  * in between the time steps.
                  */
-                simulation::stage::FieldBackground{*cellDescription}(currentStep, nvidia::functors::Add());
+                fieldBackground.add(currentStep);
             }
         }
 
@@ -604,7 +589,7 @@ namespace picongpu
                 log<picLog::SIMULATION_STATE>("slide in step %1%") % currentStep;
                 resetAll(currentStep);
                 initialiserController->slide(currentStep);
-                meta::ForEach<particles::InitPipeline, particles::CallFunctor<bmpl::_1>> initSpecies;
+                meta::ForEach<particles::InitPipeline, pmacc::functor::Call<bmpl::_1>> initSpecies;
                 initSpecies(currentStep);
             }
         }
@@ -624,6 +609,11 @@ namespace picongpu
         std::shared_ptr<DeviceHeap> deviceHeap;
 
         fields::Solver* myFieldSolver;
+        simulation::stage::CurrentInterpolationAndAdditionToEMF currentInterpolationAndAdditionToEMF;
+
+        // Field background stage, has to live always as it is used for registering options like a plugin.
+        // Because of it, has a special init() method that has to be called during initialization of the simulation
+        simulation::stage::FieldBackground fieldBackground;
 
 #if(PMACC_CUDA_ENABLED == 1)
         // creates lookup tables for the bremsstrahlung effect
@@ -687,7 +677,6 @@ namespace picongpu
                     auto field = std::dynamic_pointer_cast<FieldHelper>(dc.get<ISimulationData>(name, true));
                     if(field)
                         field->reset(currentStep);
-                    dc.releaseData(name);
                 }
             };
 

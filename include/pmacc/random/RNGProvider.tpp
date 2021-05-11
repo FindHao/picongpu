@@ -21,11 +21,11 @@
 
 #pragma once
 
-#include "pmacc/random/RNGProvider.hpp"
-#include "pmacc/dimensions/DataSpaceOperations.hpp"
 #include "pmacc/Environment.hpp"
+#include "pmacc/dimensions/DataSpaceOperations.hpp"
 #include "pmacc/mappings/threads/ForEachIdx.hpp"
 #include "pmacc/mappings/threads/IdxConfig.hpp"
+#include "pmacc/random/RNGProvider.hpp"
 #include "pmacc/traits/GetNumWorkers.hpp"
 
 #include <memory>
@@ -97,7 +97,6 @@ namespace pmacc
         {
             auto provider = Environment<>::get().DataConnector().get<RNGProvider>(id, true);
             Handle result(provider->getDeviceDataBox());
-            Environment<>::get().DataConnector().releaseData(id);
             return result;
         }
 

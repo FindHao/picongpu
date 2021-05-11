@@ -1,5 +1,6 @@
 /* Copyright 2014-2021 Axel Huebl, Felix Schmitt, Heiko Burau, Rene Widera,
- *                     Benjamin Worpitz, Alexander Grund, Franz Poeschel
+ *                     Benjamin Worpitz, Alexander Grund, Franz Poeschel,
+ *                     Pawel Ordyna
  *
  * This file is part of PIConGPU.
  *
@@ -20,20 +21,29 @@
 
 #pragma once
 
+#include "picongpu/simulation_defines.hpp"
+
 #include "picongpu/fields/FieldB.hpp"
 #include "picongpu/fields/FieldE.hpp"
 #include "picongpu/fields/FieldJ.hpp"
 #include "picongpu/fields/FieldTmp.hpp"
 #include "picongpu/particles/filter/filter.hpp"
 #include "picongpu/particles/traits/SpeciesEligibleForSolver.hpp"
+#include "picongpu/plugins/common/openPMDVersion.def"
+#include "picongpu/plugins/common/openPMDWriteMeta.hpp"
 #include "picongpu/plugins/misc/ComponentNames.hpp"
 #include "picongpu/plugins/misc/SpeciesFilter.hpp"
 #include "picongpu/plugins/misc/misc.hpp"
 #include "picongpu/plugins/multi/IHelp.hpp"
 #include "picongpu/plugins/multi/Option.hpp"
+#include "picongpu/plugins/openPMD/Json.hpp"
+#include "picongpu/plugins/openPMD/NDScalars.hpp"
+#include "picongpu/plugins/openPMD/WriteSpecies.hpp"
 #include "picongpu/plugins/openPMD/openPMDWriter.def"
+#include "picongpu/plugins/openPMD/restart/LoadSpecies.hpp"
+#include "picongpu/plugins/openPMD/restart/RestartFieldLoader.hpp"
+#include "picongpu/plugins/output/IIOBackend.hpp"
 #include "picongpu/simulation/control/MovingWindow.hpp"
-#include "picongpu/simulation_defines.hpp"
 #include "picongpu/traits/IsFieldDomainBound.hpp"
 
 #include <pmacc/Environment.hpp>
@@ -46,21 +56,11 @@
 #include <pmacc/math/Vector.hpp>
 #include <pmacc/particles/IdProvider.def>
 #include <pmacc/particles/frame_types.hpp>
+#include <pmacc/particles/memory/buffers/MallocMCBuffer.hpp>
 #include <pmacc/particles/operations/CountParticles.hpp>
 #include <pmacc/pluginSystem/PluginConnector.hpp>
 #include <pmacc/simulationControl/TimeInterval.hpp>
 #include <pmacc/static_assert.hpp>
-#include <pmacc/particles/memory/buffers/MallocMCBuffer.hpp>
-
-#include "picongpu/plugins/misc/SpeciesFilter.hpp"
-#include "picongpu/plugins/openPMD/NDScalars.hpp"
-#include "picongpu/plugins/openPMD/WriteMeta.hpp"
-#include "picongpu/plugins/openPMD/openPMDVersion.def"
-#include "picongpu/plugins/openPMD/WriteSpecies.hpp"
-#include "picongpu/plugins/openPMD/restart/LoadSpecies.hpp"
-#include "picongpu/plugins/openPMD/restart/RestartFieldLoader.hpp"
-#include "picongpu/plugins/output/IIOBackend.hpp"
-
 #include <pmacc/traits/Limits.hpp>
 
 #include <boost/filesystem.hpp>
@@ -83,10 +83,11 @@
 #include <cstdint>
 #include <cstdlib> // getenv
 #include <list>
-#include <pthread.h>
 #include <sstream>
 #include <string>
 #include <vector>
+
+#include <pthread.h>
 
 
 namespace picongpu
@@ -104,10 +105,12 @@ namespace picongpu
             ::openPMD::Datatype datatype,
             pmacc::math::UInt64<DIM> const& globalDimensions,
             bool compression,
-            std::string const& compressionMethod)
+            std::string const& compressionMethod,
+            std::string const& datasetName)
         {
             std::vector<uint64_t> v = asStandardVector(globalDimensions);
             ::openPMD::Dataset dataset{datatype, std::move(v)};
+            setDatasetOptions(dataset, jsonMatcher->get(datasetName));
             if(compression && compressionMethod != "none")
             {
                 dataset.compression = compressionMethod;
@@ -136,8 +139,11 @@ namespace picongpu
             {
                 std::string fullName = fileName + fileInfix + "." + fileExtension;
                 log<picLog::INPUT_OUTPUT>("openPMD: open file: %1%") % fullName;
-                openPMDSeries = std::unique_ptr<::openPMD::Series>(
-                    new ::openPMD::Series(fullName, at, communicator, jsonConfig));
+                // avoid deadlock between not finished pmacc tasks and mpi calls in
+                // openPMD
+                __getTransactionEvent().waitForFinished();
+                openPMDSeries
+                    = std::make_unique<::openPMD::Series>(fullName, at, communicator, jsonMatcher->getDefault());
                 if(openPMDSeries->backend() == "MPI_ADIOS1")
                 {
                     throw std::runtime_error(R"END(
@@ -153,6 +159,7 @@ Please pick either of the following:
                 if(at == ::openPMD::Access::CREATE)
                 {
                     openPMDSeries->setMeshesPath(MESHES_PATH);
+                    openPMDSeries->setParticlesPath(PARTICLES_PATH);
                 }
                 log<picLog::INPUT_OUTPUT>("openPMD: successfully opened file: %1%") % fullName;
                 return *openPMDSeries;
@@ -363,12 +370,19 @@ Please pick either of the following:
             /* if file name is relative, prepend with common directory */
             fileName = boost::filesystem::path(file).has_root_path() ? file : dir + "/" + file;
 
-            jsonConfig = help.jsonConfig.get(id);
+            // avoid deadlock between not finished pmacc tasks and mpi blocking collectives
+            __getTransactionEvent().waitForFinished();
 
             log<picLog::INPUT_OUTPUT>("openPMD: setting file pattern: %1%%2%.%3%") % fileName % fileInfix
                 % fileExtension;
 
-            log<picLog::INPUT_OUTPUT>("openPMD: setting JSON configuration to %1%") % jsonConfig;
+            // Avoid repeatedly parsing the JSON config
+            if(!jsonMatcher)
+            {
+                jsonMatcher = AbstractJsonMatcher::construct(help.jsonConfig.get(id), communicator);
+            }
+
+            log<picLog::INPUT_OUTPUT>("openPMD: global JSON config: %1%") % jsonMatcher->getDefault();
 
             {
                 std::string strategyString = help.dataPreparationStrategy.get(id);
@@ -466,19 +480,17 @@ Please pick either of the following:
                         std::move(inCellPosition),
                         timeOffset,
                         isDomainBound);
-
-                    dc.releaseData(T_Field::getName());
 #endif
                 }
             };
 
-            /** Calculate FieldTmp with given solver and particle species
+            /** Calculate FieldTmp with given solver, particle species, and filter
              * and write them to openPMD.
              *
              * FieldTmp is calculated on device and then dumped to openPMD.
              */
-            template<typename Solver, typename Species>
-            struct GetFields<FieldTmpOperation<Solver, Species>>
+            template<typename Solver, typename Species, typename Filter>
+            struct GetFields<FieldTmpOperation<Solver, Species, Filter>>
             {
                 /*
                  * This is only a wrapper function to allow disable nvcc warnings.
@@ -512,7 +524,7 @@ Please pick either of the following:
                  */
                 static std::string getName()
                 {
-                    return FieldTmpOperation<Solver, Species>::getName();
+                    return FieldTmpOperation<Solver, Species, Filter>::getName();
                 }
 
                 HINLINE void operator_impl(ThreadParams* params)
@@ -529,13 +541,12 @@ Please pick either of the following:
 
                     fieldTmp->getGridBuffer().getDeviceBuffer().setValue(ValueType::create(0.0));
                     /*run algorithm*/
-                    fieldTmp->template computeValue<CORE + BORDER, Solver>(*speciesTmp, params->currentStep);
+                    fieldTmp->template computeValue<CORE + BORDER, Solver, Filter>(*speciesTmp, params->currentStep);
 
                     EventTask fieldTmpEvent = fieldTmp->asyncCommunication(__getTransactionEvent());
                     __setTransactionEvent(fieldTmpEvent);
                     /* copy data to host that we can write same to disk*/
                     fieldTmp->getGridBuffer().deviceToHost();
-                    dc.releaseData(Species::FrameType::getName());
                     /*## finish update field ##*/
 
                     const uint32_t components = GetNComponents<ValueType>::value;
@@ -568,8 +579,6 @@ Please pick either of the following:
                         std::move(inCellPosition),
                         timeOffset,
                         isDomainBound);
-
-                    dc.releaseData(FieldTmp::getUniqueId(0));
                 }
             };
 
@@ -794,6 +803,7 @@ Please pick either of the following:
                     }
                 }
 
+#if(PMACC_CUDA_ENABLED == 1 || ALPAKA_ACC_GPU_HIP_ENABLED == 1)
                 /* copy species only one time per timestep to the host */
                 if(mThreadParams.strategy == WriteSpeciesStrategy::ADIOS && lastSpeciesSyncStep != currentStep)
                 {
@@ -810,9 +820,8 @@ Please pick either of the following:
                     meta::ForEach<FileCheckpointParticles, CopySpeciesToHost<bmpl::_1>> copySpeciesToHost;
                     copySpeciesToHost();
                     lastSpeciesSyncStep = currentStep;
-
-                    dc.releaseData(MallocMCBuffer<DeviceHeap>::getName());
                 }
+#endif
 
                 TimeIntervall timer;
                 timer.toggleStart();
@@ -950,7 +959,6 @@ Please pick either of the following:
 
                     DataConnector& dc = Environment<>::get().DataConnector();
                     fieldsSizeDims = precisionCast<uint64_t>(params->gridLayout.getDataSpaceWithoutGuarding());
-                    dc.releaseData(name);
 
                     /* Scan the PML buffer local size along all local domains
                      * This code is based on the same operation in hdf5::Field::writeField(),
@@ -1025,8 +1033,17 @@ Please pick either of the following:
                     ::openPMD::MeshRecordComponent mrc
                         = mesh[nComponents > 1 ? name_lookup_tpl[d] : ::openPMD::RecordComponent::SCALAR];
 
-                    params
-                        ->initDataset<simDim>(mrc, openPMDType, fieldsGlobalSizeDims, true, params->compressionMethod);
+                    std::string datasetName = nComponents > 1
+                        ? params->openPMDSeries->meshesPath() + name + "/" + name_lookup_tpl[d]
+                        : params->openPMDSeries->meshesPath() + name;
+
+                    params->initDataset<simDim>(
+                        mrc,
+                        openPMDType,
+                        fieldsGlobalSizeDims,
+                        true,
+                        params->compressionMethod,
+                        datasetName);
                     if(dstBuffer.size() > 0)
                         mrc.storeChunk<std::vector<float_X>>(
                             dstBuffer,
@@ -1197,7 +1214,7 @@ Please pick either of the following:
 
                 /* attributes written here are pure meta data */
                 WriteMeta writeMetaAttributes;
-                writeMetaAttributes(threadParams);
+                writeMetaAttributes(*threadParams->openPMDSeries, threadParams->currentStep);
 
                 // avoid deadlock between not finished pmacc tasks and mpi calls in
                 // openPMD

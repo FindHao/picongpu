@@ -19,24 +19,23 @@
  * If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "pmacc/types.hpp"
+#include "pmacc/dimensions/DataSpaceOperations.hpp"
+#include "pmacc/kernel/atomic.hpp"
+#include "pmacc/mappings/kernel/ExchangeMapping.hpp"
+#include "pmacc/mappings/threads/ForEachIdx.hpp"
+#include "pmacc/mappings/threads/IdxConfig.hpp"
+#include "pmacc/memory/Array.hpp"
+#include "pmacc/memory/CtxArray.hpp"
+#include "pmacc/memory/shared/Allocate.hpp"
+#include "pmacc/particles/memory/boxes/ExchangePopDataBox.hpp"
+#include "pmacc/particles/memory/boxes/ExchangePushDataBox.hpp"
 #include "pmacc/particles/memory/boxes/ParticlesBox.hpp"
 #include "pmacc/particles/memory/boxes/PushDataBox.hpp"
 #include "pmacc/particles/memory/boxes/TileDataBox.hpp"
-#include "pmacc/dimensions/DataSpaceOperations.hpp"
-#include "pmacc/mappings/kernel/ExchangeMapping.hpp"
-#include "pmacc/particles/memory/boxes/ExchangePushDataBox.hpp"
-#include "pmacc/particles/memory/boxes/ExchangePopDataBox.hpp"
-#include "pmacc/memory/CtxArray.hpp"
-#include "pmacc/mappings/threads/ForEachIdx.hpp"
-#include "pmacc/mappings/threads/IdxConfig.hpp"
-
 #include "pmacc/particles/operations/Assign.hpp"
 #include "pmacc/particles/operations/Deselect.hpp"
 #include "pmacc/traits/NumberOfExchanges.hpp"
-#include "pmacc/nvidia/atomic.hpp"
-#include "pmacc/memory/shared/Allocate.hpp"
-#include "pmacc/memory/Array.hpp"
+#include "pmacc/types.hpp"
 
 namespace pmacc
 {
@@ -119,7 +118,7 @@ namespace pmacc
                 // count particles in last frame
                 forEachParticle([&](uint32_t const, uint32_t const idx) {
                     if(isParticleCtx[idx])
-                        nvidia::atomicAllInc(acc, &numParticles, ::alpaka::hierarchy::Threads{});
+                        kernel::atomicAllInc(acc, &numParticles, ::alpaka::hierarchy::Threads{});
                 });
 
                 cupla::__syncthreads(acc);
@@ -127,7 +126,7 @@ namespace pmacc
                 forEachParticle([&](uint32_t const linearIdx, uint32_t const idx) {
                     if(linearIdx < numParticles && isParticleCtx[idx] == false)
                     {
-                        int const localGapIdx = nvidia::atomicAllInc(acc, &numGaps, ::alpaka::hierarchy::Threads{});
+                        int const localGapIdx = kernel::atomicAllInc(acc, &numGaps, ::alpaka::hierarchy::Threads{});
                         gapIndices_sh[localGapIdx] = linearIdx;
                     }
                 });
@@ -136,7 +135,7 @@ namespace pmacc
                     if(linearIdx >= numParticles && isParticleCtx[idx])
                     {
                         // any particle search a gap
-                        int const srcGapIdx = nvidia::atomicAllInc(acc, &srcGap, ::alpaka::hierarchy::Threads{});
+                        int const srcGapIdx = kernel::atomicAllInc(acc, &srcGap, ::alpaka::hierarchy::Threads{});
                         int const gapIdx = gapIndices_sh[srcGapIdx];
                         auto parDestFull = lastFrame[gapIdx];
                         /* enable particle */
@@ -244,7 +243,7 @@ namespace pmacc
                 forEachParticle([&](uint32_t const linearIdx, uint32_t const idx) {
                     if(firstFrame[linearIdx][multiMask_] == 0)
                     {
-                        localGapIdxCtx[idx] = nvidia::atomicAllInc(acc, &numGaps, ::alpaka::hierarchy::Threads{});
+                        localGapIdxCtx[idx] = kernel::atomicAllInc(acc, &numGaps, ::alpaka::hierarchy::Threads{});
                     }
                 });
 
@@ -258,7 +257,7 @@ namespace pmacc
                         if(lastFrame[linearIdx][multiMask_] == 1)
                         {
                             int const localParticleIdx
-                                = nvidia::atomicAllInc(acc, &numParticles, ::alpaka::hierarchy::Threads{});
+                                = kernel::atomicAllInc(acc, &numParticles, ::alpaka::hierarchy::Threads{});
                             particleIndices_sh[localParticleIdx] = linearIdx;
                         }
                     });
@@ -707,7 +706,7 @@ namespace pmacc
                     if(frame[linearIdx][multiMask_] == 1)
                     {
                         exchangeGapIdxCtx[idx]
-                            = nvidia::atomicAllInc(acc, &numParticles, ::alpaka::hierarchy::Threads{});
+                            = kernel::atomicAllInc(acc, &numParticles, ::alpaka::hierarchy::Threads{});
                     }
                 });
                 cupla::__syncthreads(acc);

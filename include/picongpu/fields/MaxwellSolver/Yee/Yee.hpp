@@ -20,20 +20,22 @@
 #pragma once
 
 #include "picongpu/simulation_defines.hpp"
-#include "picongpu/fields/MaxwellSolver/Yee/Yee.def"
-#include "picongpu/fields/absorber/ExponentialDamping.hpp"
-#include "picongpu/fields/FieldE.hpp"
+
 #include "picongpu/fields/FieldB.hpp"
-#include "picongpu/fields/MaxwellSolver/Yee/Yee.kernel"
-#include "picongpu/fields/cellType/Yee.hpp"
+#include "picongpu/fields/FieldE.hpp"
 #include "picongpu/fields/LaserPhysics.hpp"
+#include "picongpu/fields/MaxwellSolver/Yee/Yee.def"
+#include "picongpu/fields/MaxwellSolver/Yee/Yee.kernel"
+#include "picongpu/fields/absorber/ExponentialDamping.hpp"
+#include "picongpu/fields/cellType/Yee.hpp"
 #include "picongpu/fields/differentiation/Curl.hpp"
 #include "picongpu/traits/GetMargin.hpp"
 
-#include <pmacc/nvidia/functors/Assign.hpp>
+#include <pmacc/dataManagement/DataConnector.hpp>
 #include <pmacc/mappings/threads/ThreadCollective.hpp>
 #include <pmacc/memory/boxes/CachedBox.hpp>
-#include <pmacc/dataManagement/DataConnector.hpp>
+
+#include <pmacc/math/vector/compile-time/Vector.hpp>
 
 
 namespace picongpu
@@ -42,12 +44,11 @@ namespace picongpu
     {
         namespace maxwellSolver
         {
-            template<typename T_CurrentInterpolation, class CurlE, class CurlB>
+            template<class CurlE, class CurlB>
             class Yee
             {
             private:
                 typedef MappingDesc::SuperCellSize SuperCellSize;
-
 
                 std::shared_ptr<FieldE> fieldE;
                 std::shared_ptr<FieldB> fieldB;
@@ -64,7 +65,7 @@ namespace picongpu
                     PMACC_CASSERT_MSG(
                         Courant_Friedrichs_Levy_condition_failure____check_your_grid_param_file,
                         (SPEED_OF_LIGHT * SPEED_OF_LIGHT * DELTA_T * DELTA_T * INV_CELL2_SUM) <= 1.0
-                            && sizeof(T_CurrentInterpolation*) != 0);
+                            && sizeof(SuperCellSize*) != 0);
 
                     typedef SuperCellDescription<
                         SuperCellSize,
@@ -103,7 +104,6 @@ namespace picongpu
 
             public:
                 using CellType = cellType::Yee;
-                using CurrentInterpolation = T_CurrentInterpolation;
 
                 Yee(MappingDesc cellDescription) : m_cellDescription(cellDescription)
                 {
@@ -125,8 +125,12 @@ namespace picongpu
 
                 void update_afterCurrent(uint32_t currentStep)
                 {
-                    using Absorber = absorber::ExponentialDamping;
-                    Absorber::run(currentStep, this->m_cellDescription, this->fieldE->getDeviceDataBox());
+                    /* Here we use exponential damping explicitly to simplify transition to runtime absorber.
+                     * It is safe since this field solver kind is only compiled with this absorber kind,
+                     * and otherwise the conversion would not compile.
+                     */
+                    auto& absorber = static_cast<absorber::ExponentialDamping&>(absorber::Absorber::get());
+                    absorber.run(currentStep, this->m_cellDescription, this->fieldE->getDeviceDataBox());
                     if(laserProfiles::Selected::INIT_TIME > float_X(0.0))
                         LaserPhysics{}(currentStep);
 
@@ -136,7 +140,7 @@ namespace picongpu
                     __setTransactionEvent(eRfieldE);
                     updateBHalf<BORDER>();
 
-                    Absorber::run(currentStep, this->m_cellDescription, fieldB->getDeviceDataBox());
+                    absorber.run(currentStep, this->m_cellDescription, fieldB->getDeviceDataBox());
 
                     EventTask eRfieldB = fieldB->asyncCommunication(__getTransactionEvent());
                     __setTransactionEvent(eRfieldB);
@@ -154,18 +158,48 @@ namespace picongpu
 
     namespace traits
     {
-        template<typename T_CurrentInterpolation, class CurlE, class CurlB>
-        struct GetMargin<picongpu::fields::maxwellSolver::Yee<T_CurrentInterpolation, CurlE, CurlB>, FIELD_B>
+        /** Get margin for B field access in the Yee solver
+         *
+         * @tparam T_CurlE functor to compute curl of E
+         * @tparam T_CurlB functor to compute curl of B
+         */
+        template<typename T_CurlE, typename T_CurlB>
+        struct GetMargin<fields::maxwellSolver::Yee<T_CurlE, T_CurlB>, FieldB>
         {
-            using LowerMargin = typename CurlB::LowerMargin;
-            using UpperMargin = typename CurlB::UpperMargin;
+            using LowerMargin = typename T_CurlB::LowerMargin;
+            using UpperMargin = typename T_CurlB::UpperMargin;
         };
 
-        template<typename T_CurrentInterpolation, class CurlE, class CurlB>
-        struct GetMargin<picongpu::fields::maxwellSolver::Yee<T_CurrentInterpolation, CurlE, CurlB>, FIELD_E>
+        /** Get margin for E field access in the Yee solver
+         *
+         * @tparam T_CurlE functor to compute curl of E
+         * @tparam T_CurlB functor to compute curl of B
+         */
+        template<typename T_CurlE, typename T_CurlB>
+        struct GetMargin<fields::maxwellSolver::Yee<T_CurlE, T_CurlB>, FieldE>
         {
-            using LowerMargin = typename CurlE::LowerMargin;
-            using UpperMargin = typename CurlE::UpperMargin;
+            using LowerMargin = typename T_CurlE::LowerMargin;
+            using UpperMargin = typename T_CurlE::UpperMargin;
+        };
+
+        /** Get margin for both fields access in the Yee solver
+         *
+         * @tparam T_CurlE functor to compute curl of E
+         * @tparam T_CurlB functor to compute curl of B
+         */
+        template<typename T_CurlE, typename T_CurlB>
+        struct GetMargin<fields::maxwellSolver::Yee<T_CurlE, T_CurlB>>
+        {
+        private:
+            using Solver = fields::maxwellSolver::Yee<T_CurlE, T_CurlB>;
+
+        public:
+            using LowerMargin = typename pmacc::math::CT::max<
+                typename GetLowerMargin<Solver, FieldB>::type,
+                typename GetLowerMargin<Solver, FieldE>::type>::type;
+            using UpperMargin = typename pmacc::math::CT::max<
+                typename GetUpperMargin<Solver, FieldB>::type,
+                typename GetUpperMargin<Solver, FieldE>::type>::type;
         };
 
     } // namespace traits

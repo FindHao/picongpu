@@ -21,17 +21,19 @@
 #pragma once
 
 #include "picongpu/simulation_defines.hpp"
-#include "picongpu/fields/currentDeposition/Strategy.def"
-#include "picongpu/fields/currentDeposition/Cache.hpp"
-#include "picongpu/fields/FieldJ.hpp"
-#include "picongpu/algorithms/Velocity.hpp"
 
-#include <pmacc/memory/boxes/CachedBox.hpp>
+#include "picongpu/algorithms/Velocity.hpp"
+#include "picongpu/fields/FieldJ.hpp"
+#include "picongpu/fields/currentDeposition/Cache.hpp"
+#include "picongpu/fields/currentDeposition/Strategy.def"
+
 #include <pmacc/dimensions/DataSpaceOperations.hpp>
-#include <pmacc/mappings/threads/ThreadCollective.hpp>
 #include <pmacc/mappings/threads/ForEachIdx.hpp>
 #include <pmacc/mappings/threads/IdxConfig.hpp>
+#include <pmacc/mappings/threads/ThreadCollective.hpp>
+#include <pmacc/math/operation.hpp>
 #include <pmacc/memory/CtxArray.hpp>
+#include <pmacc/memory/boxes/CachedBox.hpp>
 #include <pmacc/particles/frame_types.hpp>
 #include <pmacc/particles/memory/boxes/ParticlesBox.hpp>
 #include <pmacc/types.hpp>
@@ -236,13 +238,13 @@ namespace picongpu
         template<uint32_t T_numWorkers>
         struct KernelAddCurrentToEMF
         {
-            template<typename T_CurrentInterpolation, typename T_Mapping, typename T_Acc>
+            template<typename T_CurrentInterpolationFunctor, typename T_Mapping, typename T_Acc>
             DINLINE void operator()(
                 T_Acc const& acc,
                 typename FieldE::DataBoxType fieldE,
                 typename FieldB::DataBoxType fieldB,
                 typename FieldJ::DataBoxType fieldJ,
-                T_CurrentInterpolation currentInterpolation,
+                T_CurrentInterpolationFunctor currentInterpolationFunctor,
                 T_Mapping mapper) const
             {
                 using namespace mappings::threads;
@@ -250,8 +252,8 @@ namespace picongpu
                 /* Caching of fieldJ */
                 typedef SuperCellDescription<
                     SuperCellSize,
-                    typename T_CurrentInterpolation::LowerMargin,
-                    typename T_CurrentInterpolation::UpperMargin>
+                    typename T_CurrentInterpolationFunctor::LowerMargin,
+                    typename T_CurrentInterpolationFunctor::UpperMargin>
                     BlockArea;
 
                 constexpr uint32_t cellsPerSuperCell = pmacc::math::CT::volume<SuperCellSize>::type::value;
@@ -261,7 +263,7 @@ namespace picongpu
 
                 auto cachedJ = CachedBox::create<0, typename FieldJ::DataBoxType::ValueType>(acc, BlockArea());
 
-                nvidia::functors::Assign assign;
+                pmacc::math::operation::Assign assign;
                 DataSpace<simDim> const block(mapper.getSuperCellIndex(DataSpace<simDim>(cupla::blockIdx(acc))));
                 DataSpace<simDim> const blockCell = block * MappingDesc::SuperCellSize::toRT();
 
@@ -285,7 +287,7 @@ namespace picongpu
                         //   Change of the dE = - j / EPS0 * dt
                         //                        j = current density (= current per area)
                         //                          = fieldJ
-                        currentInterpolation(fieldE.shift(cell), fieldB.shift(cell), cachedJ.shift(cellIdx));
+                        currentInterpolationFunctor(fieldE.shift(cell), fieldB.shift(cell), cachedJ.shift(cellIdx));
                     });
             }
         };

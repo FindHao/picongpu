@@ -21,15 +21,16 @@
 #pragma once
 
 #include "picongpu/simulation_defines.hpp"
+
 #include "picongpu/particles/traits/GetSpeciesFlagName.hpp"
 #include "picongpu/plugins/ISimulationPlugin.hpp"
+#include "picongpu/plugins/common/openPMDVersion.def"
 #include "picongpu/plugins/kernel/CopySpecies.kernel"
-#include "picongpu/plugins/openPMD/openPMDWriter.def"
-#include "picongpu/plugins/openPMD/openPMDVersion.def"
-#include "picongpu/plugins/openPMD/writer/ParticleAttribute.hpp"
-#include "picongpu/plugins/output/WriteSpeciesCommon.hpp"
-#include "picongpu/plugins/output/ConstSpeciesAttributes.hpp"
 #include "picongpu/plugins/openPMD/openPMDDimension.hpp"
+#include "picongpu/plugins/openPMD/openPMDWriter.def"
+#include "picongpu/plugins/openPMD/writer/ParticleAttribute.hpp"
+#include "picongpu/plugins/output/ConstSpeciesAttributes.hpp"
+#include "picongpu/plugins/output/WriteSpeciesCommon.hpp"
 
 #include <pmacc/assert.hpp>
 #include <pmacc/dataManagement/DataConnector.hpp>
@@ -38,11 +39,10 @@
 #include <pmacc/meta/conversion/MakeSeq.hpp>
 #include <pmacc/meta/conversion/RemoveFromSeq.hpp>
 #include <pmacc/particles/ParticleDescription.hpp>
+#include <pmacc/particles/memory/buffers/MallocMCBuffer.hpp>
 #include <pmacc/particles/operations/ConcatListOfFrames.hpp>
 #include <pmacc/particles/particleFilter/FilterFactory.hpp>
 #include <pmacc/particles/particleFilter/PositionFilter.hpp>
-#include <pmacc/particles/memory/buffers/MallocMCBuffer.hpp>
-
 
 #include <boost/mpl/at.hpp>
 #include <boost/mpl/begin_end.hpp>
@@ -130,8 +130,6 @@ namespace picongpu
                 log<picLog::INPUT_OUTPUT>("openPMD:   (begin) copy particle host (with hierarchy) to "
                                           "host (without hierarchy): %1%")
                     % name;
-                auto mallocMCBuffer
-                    = rp.dc.template get<MallocMCBuffer<DeviceHeap>>(MallocMCBuffer<DeviceHeap>::getName(), true);
 
                 int globalParticleOffset = 0;
                 AreaMapping<CORE + BORDER, MappingDesc> mapper(*(rp.params.cellDescription));
@@ -139,6 +137,8 @@ namespace picongpu
                 pmacc::particles::operations::ConcatListOfFrames<simDim> concatListOfFrames(mapper.getGridDim());
 
 #if(PMACC_CUDA_ENABLED == 1 || ALPAKA_ACC_GPU_HIP_ENABLED == 1)
+                auto mallocMCBuffer
+                    = rp.dc.template get<MallocMCBuffer<DeviceHeap>>(MallocMCBuffer<DeviceHeap>::getName(), true);
                 auto particlesBox = rp.speciesTmp->getHostParticlesBox(mallocMCBuffer->getOffset());
 #else
                 /* This separate code path is only a workaround until
@@ -167,7 +167,6 @@ namespace picongpu
                     mapper,
                     rp.particleFilter);
 
-                rp.dc.releaseData(MallocMCBuffer<DeviceHeap>::getName());
 
                 /* this costs a little bit of time but writing to external is
                  * slower in general */
@@ -259,7 +258,10 @@ namespace picongpu
 
             using openPMDFrameType = Frame<OperatorCreateVectorBox, NewParticleDescription>;
 
-            void setParticleAttributes(::openPMD::ParticleSpecies& record)
+            void setParticleAttributes(
+                ::openPMD::ParticleSpecies& record,
+                AbstractJsonMatcher& matcher,
+                std::string const& basename)
             {
                 const float_64 particleShape(GetShape<ThisSpecies>::type::assignmentFunctionOrder);
                 record.setAttribute("particleShape", particleShape);
@@ -294,6 +296,7 @@ namespace picongpu
                     const float_64 mass(getMassOrZero());
                     auto& massRecord = record["mass"];
                     auto& massComponent = massRecord[::openPMD::RecordComponent::SCALAR];
+                    setDatasetOptions(dataSet, matcher.get(basename + "/mass"));
                     massComponent.resetDataset(dataSet);
                     massComponent.makeConstant(mass);
 
@@ -313,6 +316,7 @@ namespace picongpu
                     const float_64 charge(getChargeOrZero());
                     auto& chargeRecord = record["charge"];
                     auto& chargeComponent = chargeRecord[::openPMD::RecordComponent::SCALAR];
+                    setDatasetOptions(dataSet, matcher.get(basename + "/charge"));
                     chargeComponent.resetDataset(dataSet);
                     chargeComponent.makeConstant(charge);
 
@@ -339,6 +343,7 @@ namespace picongpu
 
                 ::openPMD::Series& series = *params->openPMDSeries;
                 ::openPMD::Iteration iteration = series.WRITE_ITERATIONS[params->currentStep];
+                const std::string basename = series.particlesPath() + speciesGroup;
 
                 // enforce that the filter interface is fulfilled
                 particles::filter::IUnary<typename T_SpeciesFilter::Filter> particleFilter{params->currentStep};
@@ -436,6 +441,7 @@ namespace picongpu
                     params,
                     hostFrame,
                     particleSpecies,
+                    basename,
                     myNumParticles,
                     globalNumParticles,
                     myParticleOffset);
@@ -453,7 +459,8 @@ namespace picongpu
                 {
                     using index_t = uint64_t;
                     ::openPMD::Datatype const datatype = ::openPMD::determineDatatype<index_t>();
-                    ::openPMD::Dataset const ds(datatype, {mpiSize});
+                    // not const, we'll switch out the JSON config
+                    ::openPMD::Dataset ds(datatype, {mpiSize});
 
                     ::openPMD::ParticlePatches particlePatches = particleSpecies.particlePatches;
                     ::openPMD::PatchRecordComponent numParticles
@@ -461,7 +468,9 @@ namespace picongpu
                     ::openPMD::PatchRecordComponent numParticlesOffset
                         = particlePatches["numParticlesOffset"][::openPMD::RecordComponent::SCALAR];
 
+                    setDatasetOptions(ds, params->jsonMatcher->get(basename + "/particlePatches/numParticles"));
                     numParticles.resetDataset(ds);
+                    setDatasetOptions(ds, params->jsonMatcher->get(basename + "/particlePatches/numParticlesOffset"));
                     numParticlesOffset.resetDataset(ds);
 
                     /* It is safe to use the mpi rank to write the data even if the rank can differ between simulation
@@ -478,8 +487,13 @@ namespace picongpu
                     {
                         ::openPMD::PatchRecordComponent offset_x = offset[name_lookup[d]];
                         ::openPMD::PatchRecordComponent extent_x = extent[name_lookup[d]];
-
+                        setDatasetOptions(
+                            ds,
+                            params->jsonMatcher->get(basename + "/particlePatches/offset/" + name_lookup[d]));
                         offset_x.resetDataset(ds);
+                        setDatasetOptions(
+                            ds,
+                            params->jsonMatcher->get(basename + "/particlePatches/extent/" + name_lookup[d]));
                         extent_x.resetDataset(ds);
 
                         offset_x.store<index_t>(mpiRank, particleOffset[d]);
@@ -487,7 +501,10 @@ namespace picongpu
                     }
 
                     /* openPMD ED-PIC: additional attributes */
-                    setParticleAttributes(particleSpecies);
+                    setParticleAttributes(
+                        particleSpecies,
+                        *params->jsonMatcher,
+                        series.particlesPath() + speciesGroup);
                     params->openPMDSeries->flush();
                 }
 

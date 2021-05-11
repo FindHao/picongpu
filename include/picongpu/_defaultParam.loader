@@ -1,4 +1,4 @@
-/* Copyright 2013-2021 Axel Huebl, Heiko Burau, Rene Widera, Marco Garten, Finn-Ole Carstens
+/* Copyright 2013-2021 Axel Huebl, Heiko Burau, Rene Widera, Marco Garten, Finn-Ole Carstens, Pawel Ordyna
  *
  * This file is part of PIConGPU.
  *
@@ -24,6 +24,8 @@
  * for examples use extensionParam.loader
  */
 #pragma once
+
+// clang-format off
 
 #include "picongpu/param/dimension.param"
 #include "picongpu/param/precision.param"
@@ -54,6 +56,8 @@
 #include "picongpu/param/species.param"
 #include "picongpu/param/speciesDefinition.param"
 #include "picongpu/param/speciesInitialization.param"
+#include "picongpu/param/iterationStart.param"
+#include "picongpu/param/collision.param"
 #include "picongpu/param/laser.param"
 #include "picongpu/param/fieldSolver.param"
 #include "picongpu/param/fieldBackground.param"
@@ -68,3 +72,5 @@
 #if(ENABLE_OPENPMD == 1)
 #    include "picongpu/param/xrayScattering.param"
 #endif
+
+// clang-format on

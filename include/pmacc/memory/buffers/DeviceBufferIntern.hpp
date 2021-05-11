@@ -22,12 +22,15 @@
 
 #pragma once
 
+#include "pmacc/assert.hpp"
 #include "pmacc/dimensions/DataSpace.hpp"
 #include "pmacc/eventSystem/tasks/Factory.hpp"
-#include "pmacc/memory/buffers/DeviceBuffer.hpp"
-#include "pmacc/memory/boxes/DataBox.hpp"
 #include "pmacc/memory/Array.hpp"
-#include "pmacc/assert.hpp"
+#include "pmacc/memory/boxes/DataBox.hpp"
+#include "pmacc/memory/buffers/DeviceBuffer.hpp"
+
+#include <memory>
+
 
 namespace pmacc
 {
@@ -310,5 +313,26 @@ namespace pmacc
         cuplaPitchedPtr data;
         bool useOtherMemory;
     };
+
+    /** Factory for a new heap-allocated DeviceBufferIntern buffer object that is a deep copy of the given device
+     * buffer
+     *
+     * @tparam TYPE value type
+     * @tparam DIM index dimensionality
+     *
+     * @param source source device buffer
+     */
+    template<class TYPE, unsigned DIM>
+    HINLINE std::unique_ptr<DeviceBufferIntern<TYPE, DIM>> makeDeepCopy(DeviceBuffer<TYPE, DIM>& source)
+    {
+        auto result = std::make_unique<DeviceBufferIntern<TYPE, DIM>>(
+            source,
+            source.getDataSpace(),
+            DataSpace<DIM>::create(0));
+        result->copyFrom(source);
+        // Wait for copy to finish, so that the resulting object is safe to use after return
+        __getTransactionEvent().waitForFinished();
+        return result;
+    }
 
 } // namespace pmacc

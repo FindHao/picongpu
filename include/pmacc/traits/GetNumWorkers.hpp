@@ -22,6 +22,7 @@
 #pragma once
 
 #include "pmacc/types.hpp"
+
 #include <type_traits>
 
 
@@ -62,6 +63,24 @@ namespace pmacc
         struct GetNumWorkers<T_maxWorkers, alpaka::AccCpuTbbBlocks<T_Args...>>
         {
             static constexpr uint32_t value = 1u;
+        };
+#endif
+#if(ALPAKA_ACC_ANY_BT_OMP5_ENABLED == 1) && defined ALPAKA_OFFLOAD_MAX_BLOCK_SIZE && ALPAKA_OFFLOAD_MAX_BLOCK_SIZE > 0
+        template<uint32_t T_maxWorkers, typename... T_Args>
+        struct GetNumWorkers<T_maxWorkers, alpaka::AccOmp5<T_Args...>>
+        {
+            static constexpr uint32_t value = ALPAKA_OFFLOAD_MAX_BLOCK_SIZE;
+        };
+#endif
+#if(ALPAKA_ACC_ANY_BT_OACC_ENABLED == 1)
+        template<uint32_t T_maxWorkers, typename... T_Args>
+        struct GetNumWorkers<T_maxWorkers, alpaka::AccOacc<T_Args...>>
+        {
+#    ifdef ALPAKA_OFFLOAD_MAX_BLOCK_SIZE
+            static constexpr uint32_t value = ALPAKA_OFFLOAD_MAX_BLOCK_SIZE;
+#    else
+            static constexpr uint32_t value = 1;
+#    endif
         };
 #endif
     } // namespace traits

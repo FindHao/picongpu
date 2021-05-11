@@ -21,32 +21,28 @@
 
 #pragma once
 
-#include "pmacc/particles/frame_types.hpp"
-#include "pmacc/memory/buffers/GridBuffer.hpp"
-#include "pmacc/particles/memory/boxes/ParticlesBox.hpp"
 #include "pmacc/dimensions/GridLayout.hpp"
-#include "pmacc/memory/dataTypes/Mask.hpp"
-#include "pmacc/particles/memory/buffers/StackExchangeBuffer.hpp"
 #include "pmacc/eventSystem/EventSystem.hpp"
-#include "pmacc/particles/memory/dataTypes/SuperCell.hpp"
-
 #include "pmacc/math/Vector.hpp"
-
-#include "pmacc/particles/boostExtension/InheritGenerators.hpp"
+#include "pmacc/memory/buffers/GridBuffer.hpp"
+#include "pmacc/memory/dataTypes/Mask.hpp"
 #include "pmacc/meta/conversion/MakeSeq.hpp"
-
-
-#include <boost/mpl/vector.hpp>
-#include <boost/mpl/copy.hpp>
-#include <boost/mpl/back_inserter.hpp>
-
-#include "pmacc/particles/memory/frames/Frame.hpp"
 #include "pmacc/particles/Identifier.hpp"
-#include "pmacc/particles/memory/dataTypes/StaticArray.hpp"
-#include <boost/mpl/vector.hpp>
-#include <boost/mpl/pair.hpp>
 #include "pmacc/particles/ParticleDescription.hpp"
+#include "pmacc/particles/boostExtension/InheritGenerators.hpp"
+#include "pmacc/particles/frame_types.hpp"
+#include "pmacc/particles/memory/boxes/ParticlesBox.hpp"
+#include "pmacc/particles/memory/buffers/StackExchangeBuffer.hpp"
 #include "pmacc/particles/memory/dataTypes/ListPointer.hpp"
+#include "pmacc/particles/memory/dataTypes/StaticArray.hpp"
+#include "pmacc/particles/memory/dataTypes/SuperCell.hpp"
+#include "pmacc/particles/memory/frames/Frame.hpp"
+#include "pmacc/traits/GetUniqueTypeId.hpp"
+
+#include <boost/mpl/back_inserter.hpp>
+#include <boost/mpl/copy.hpp>
+#include <boost/mpl/pair.hpp>
+#include <boost/mpl/vector.hpp>
 
 #include <memory>
 
@@ -196,12 +192,15 @@ namespace pmacc
             framesExchanges
                 ->addExchangeBuffer(receive, DataSpace<DIM1>(numFrameTypeBorders), communicationTag, true, false);
 
-            exchangeMemoryIndexer->addExchangeBuffer(
-                receive,
-                DataSpace<DIM1>(numFrameTypeBorders),
-                communicationTag | (1u << (20 - 5)),
-                true,
-                false);
+            /* Generate a new tag from this type
+             *
+             * The tag is the same each time this method is called (per instantiation of this template).
+             * Here it is fine, as there is the only instance object, and
+             * exchangeMemoryIndexer->addExchangeBuffer() requires the same tag on each call
+             */
+            auto const newTag = traits::GetUniqueTypeId<ParticlesBuffer, uint32_t>::uid();
+            exchangeMemoryIndexer
+                ->addExchangeBuffer(receive, DataSpace<DIM1>(numFrameTypeBorders), newTag, true, false);
         }
 
         /**

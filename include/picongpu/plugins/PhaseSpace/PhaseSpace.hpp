@@ -20,30 +20,32 @@
 #pragma once
 
 #include "picongpu/simulation_defines.hpp"
-#include "picongpu/plugins/PhaseSpace/AxisDescription.hpp"
+
 #include "picongpu/particles/traits/SpeciesEligibleForSolver.hpp"
+#include "picongpu/plugins/PhaseSpace/AxisDescription.hpp"
 #include "picongpu/plugins/PhaseSpace/PhaseSpaceFunctors.hpp"
 
-#include <pmacc/cuSTL/algorithm/kernel/Foreach.hpp>
-#include <pmacc/cuSTL/cursor/BufferCursor.hpp>
-#include <pmacc/cuSTL/zone/SphericZone.hpp>
 #include <pmacc/communication/manager_common.hpp>
-#include <pmacc/pluginSystem/INotify.hpp>
+#include <pmacc/cuSTL/algorithm/kernel/Foreach.hpp>
+#include <pmacc/cuSTL/algorithm/mpi/Reduce.hpp>
 #include <pmacc/cuSTL/container/DeviceBuffer.hpp>
 #include <pmacc/cuSTL/container/HostBuffer.hpp>
-#include <pmacc/cuSTL/algorithm/mpi/Reduce.hpp>
+#include <pmacc/cuSTL/cursor/BufferCursor.hpp>
+#include <pmacc/cuSTL/zone/SphericZone.hpp>
 #include <pmacc/math/Vector.hpp>
-#include <pmacc/traits/HasIdentifiers.hpp>
-#include <pmacc/traits/HasFlag.hpp>
+#include <pmacc/pluginSystem/INotify.hpp>
 #include <pmacc/traits/GetNumWorkers.hpp>
+#include <pmacc/traits/HasFlag.hpp>
+#include <pmacc/traits/HasIdentifiers.hpp>
 
-#include <boost/mpl/min_max.hpp>
-#include <boost/mpl/int.hpp>
 #include <boost/mpl/accumulate.hpp>
 #include <boost/mpl/and.hpp>
+#include <boost/mpl/int.hpp>
+#include <boost/mpl/min_max.hpp>
 
 #include <string>
 #include <utility>
+
 #include <mpi.h>
 
 
@@ -87,6 +89,19 @@ namespace picongpu
             plugins::multi::Option<float_X> momentum_range_min = {"min", "min range momentum [m_species c]"};
             plugins::multi::Option<float_X> momentum_range_max = {"max", "max range momentum [m_species c]"};
 
+            /*
+             * Set to h5 for now at least, to make for easier comparison of
+             * output with old outpu
+             */
+            plugins::multi::Option<std::string> file_name_extension
+                = {"ext",
+                   "openPMD filename extension (this controls the"
+                   "backend picked by the openPMD API)",
+                   "h5"};
+
+            plugins::multi::Option<std::string> json_config
+                = {"json", "advanced (backend) configuration for openPMD in JSON format", "{}"};
+
             //! string list with all possible particle filters
             std::string concatenatedFilterNames;
             std::vector<std::string> allowedFilters;
@@ -108,6 +123,8 @@ namespace picongpu
                 element_momentum.registerHelp(desc, masterPrefix + prefix);
                 momentum_range_min.registerHelp(desc, masterPrefix + prefix);
                 momentum_range_max.registerHelp(desc, masterPrefix + prefix);
+                file_name_extension.registerHelp(desc, masterPrefix + prefix);
+                json_config.registerHelp(desc, masterPrefix + prefix);
             }
 
             void expandHelp(

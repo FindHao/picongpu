@@ -21,17 +21,17 @@
 
 #pragma once
 
+#include "pmacc/Environment.hpp"
 #include "pmacc/dimensions/GridLayout.hpp"
 #include "pmacc/eventSystem/EventSystem.hpp"
-#include "pmacc/mappings/simulation/EnvironmentController.hpp"
-#include "pmacc/memory/dataTypes/Mask.hpp"
 #include "pmacc/memory/buffers/ExchangeIntern.hpp"
 #include "pmacc/memory/buffers/HostDeviceBuffer.hpp"
+#include "pmacc/memory/dataTypes/Mask.hpp"
 
-#include <sstream>
-#include <stdexcept>
 #include <algorithm>
 #include <set>
+#include <sstream>
+#include <stdexcept>
 
 namespace pmacc
 {
@@ -192,6 +192,8 @@ namespace pmacc
          * @param receive a Mask which describes the directions for the exchange
          * @param guardingCells number of guarding cells in each dimension
          * @param communicationTag unique tag/id for communication
+         *        has to be the same when this method is called multiple times for the same object
+         *        (with non-overlapping masks)
          * @param sizeOnDeviceSend if true, internal send buffers must store their
          *        size additionally on the device
          *        (as we keep this information coherent with the host, it influences
@@ -222,6 +224,9 @@ namespace pmacc
             {
                 if(send.isSet(ex))
                 {
+                    /* This operation relies on communicationTag being relatively small, so that the resulting
+                     * uniqCommunicationTag fits the range of valid tags
+                     */
                     uint32_t uniqCommunicationTag = (communicationTag << 5) | ex;
 
                     if(!hasOneExchange && !privateGridBuffer::UniquTag::getInstance().isTagUniqu(uniqCommunicationTag))
@@ -329,6 +334,9 @@ namespace pmacc
                 {
                     if(send.isSet(ex))
                     {
+                        /* This operation relies on communicationTag being relatively small, so that the resulting
+                         * uniqCommunicationTag fits the range of valid tags
+                         */
                         uint32_t uniqCommunicationTag = (communicationTag << 5) | ex;
                         if(!hasOneExchange
                            && !privateGridBuffer::UniquTag::getInstance().isTagUniqu(uniqCommunicationTag))
