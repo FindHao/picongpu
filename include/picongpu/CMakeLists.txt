@@ -319,7 +319,10 @@ elseif(MSVC)
     endif()
 endif()
 # by FindHao
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --ptxas-options=-v --debug --generate-line-info ")
+
+set(CMAKE_NVCC_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_75,code=sm_75 --ptxas-options=-v --debug --generate-line-info ")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_75,code=sm_75 --ptxas-options=-v --debug --generate-line-info ")
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g")
 ################################################################################

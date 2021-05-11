@@ -36,7 +36,10 @@ list(APPEND CMAKE_PREFIX_PATH "$ENV{VT_ROOT}")
 # Add from environment after specific env vars
 list(APPEND CMAKE_PREFIX_PATH "$ENV{CMAKE_PREFIX_PATH}")
 
-
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_75,code=sm_75 --ptxas-options=-v --debug --generate-line-info ")
+set(CMAKE_NVCC_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_75,code=sm_75 --ptxas-options=-v --debug --generate-line-info ")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g")
 ################################################################################
 # CMake policies
 #
